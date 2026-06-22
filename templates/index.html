@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuel Cell Real-Time SVG Dashboard</title>
+    <script src="https://cdn.socketio.org/4.7.5/socketio.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8f9fa;
+            margin: 0;
+            padding: 10px 20px; /* Reduced vertical padding from 20px to 10px */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            max-width: 1600px; /* Expanded maximum width constraint */
+            margin-bottom: 8px; /* Compressed space below header */
+        }
+        h1 {
+            font-size: 21px; /* Slightly tightened font title size */
+            color: #212529;
+            margin: 0;
+        }
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px; /* Reduced gap between controls */
+        }
+        .btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 6px 14px; /* Reduced button sizing footprint */
+            font-size: 13px; /* Slightly lower text footprint profile */
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .page-indicator {
+            font-size: 12px;
+            font-weight: 600;
+            color: #495057;
+            background: #e9ecef;
+            padding: 5px 12px; /* Smoothed counter badge tracking space */
+            border-radius: 20px;
+        }
+        #dashboard-viewport {
+            width: 100%;
+            max-width: 1600px; /* Allowed the main drawing engine frame to go wider */
+            flex: 1; /* Instructs container to take up all available vertical screen real estate */
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 8px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        svg {
+            width: 100%;
+            height: 100%; /* Force standard vector graphic layouts to scale to container bounds */
+            max-height: 88vh; /* Lifted canvas viewport upper limits from 85vh */
+            object-fit: contain;
+        }
+        .status-msg {
+            font-size: 16px;
+            color: #6c757d;
+            font-weight: 500;
+            text-align: center;
+        }
+        .error-banner {
+            display: none;
+            width: 100%;
+            max-width: 1600px;
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            font-family: monospace;
+            font-size: 13px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="diagnostic-error-logger" class="error-banner"></div>
+
+    <div class="header-container">
+        <h1 id="page-title">Loading Dashboard Array...</h1>
+        <div class="nav-controls">
+            <button class="btn" onclick="changePage(-1)">◀ Prev</button>
+            <span class="page-indicator" id="page-counter">0 / 0</span>
+            <button class="btn" onclick="changePage(1)">Next ▶</button>
+        </div>
+    </div>
+
+    <div id="dashboard-viewport">
+        <div class="status-msg" id="fallback-status">Contacting Application Live Cache Pipeline...</div>
+    </div>
+
+    <script>
+        let dashboardPages = [];
+        let currentPageIndex = 0;
+
+        function logError(message, context) {
+            console.error(`[${context} Error]:`, message);
+            const banner = document.getElementById('diagnostic-error-logger');
+            banner.style.display = 'block';
+            banner.innerText = `System Error [Context: ${context}]: ${message}`;
+        }
+
+        function clearErrors() {
+            document.getElementById('diagnostic-error-logger').style.display = 'none';
+        }
+
+        // 1. Fetch page metadata configuration array map objects
+        fetch('/api/pages')
+            .then(res => {
+                if (!res.ok) throw new Error(`Server returned HTTP code ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                dashboardPages = data;
+                if (dashboardPages.length > 0) {
+                    clearErrors();
+                    renderCurrentPage();
+                } else {
+                    document.getElementById('fallback-status').innerText = "Flask config.py contains an empty DASHBOARD_PAGES array.";
+                }
+            })
+            .catch(err => {
+                logError(err.message, "API_FETCH_FAILURE");
+                document.getElementById('fallback-status').innerText = "Failed loading dashboard manifest mappings.";
+            });
+
+        // 2. Render vector asset frame contents inline to canvas viewport
+        function renderCurrentPage() {
+            if (dashboardPages.length === 0) return;
+            const activePage = dashboardPages[currentPageIndex];
+            
+            document.getElementById('page-title').innerText = activePage.title;
+            document.getElementById('page-counter').innerText = `${currentPageIndex + 1} / ${dashboardPages.length}`;
+
+            const cacheBreaker = new Date().getTime();
+            const targetUrl = `/live-static/${activePage.filename}?t=${cacheBreaker}`;
+
+            fetch(targetUrl)
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status} - Cache folder file missing or inaccessible.`);
+                    return response.text();
+                })
+                .then(svgXML => {
+                    clearErrors();
+                    document.getElementById('dashboard-viewport').innerHTML = svgXML;
+                })
+                .catch(err => {
+                    logError(err.message, "SVG_STREAM_RENDER_DELAY");
+                    document.getElementById('dashboard-viewport').innerHTML = `
+                        <div class="status-msg" style="color:#c0392b;">
+                            <b>Asset Load Delay:</b> ${err.message}<br>
+                            <span style="font-size:14px; color:#7f8c8d;">Checking folder for files... New updates from ThingsBoard will clear this screen.</span>
+                        </div>`;
+                });
+        }
+
+        function changePage(direction) {
+            if (dashboardPages.length === 0) return;
+            currentPageIndex = (currentPageIndex + direction + dashboardPages.length) % dashboardPages.length;
+            renderCurrentPage();
+        }
+
+        // 3. Connect real-time socket tracking channel 
+        const socket = io();
+
+        socket.on('refresh_svg', () => {
+            renderCurrentPage();
+        });
+
+        // Left & Right Keyboard Shortcut Controls Map
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') changePage(1);
+            if (e.key === 'ArrowLeft') changePage(-1);
+        });
+    </script>
+</body>
+</html>
