@@ -6,7 +6,7 @@ pipeline{
                 bat 'docker build -t 0d_calculation_aws_img_jenk .' 
             }
         }
-        state('List Docker Images'){
+        stage('List Docker Images'){
             steps{
                 bat 'docker images'
             }
