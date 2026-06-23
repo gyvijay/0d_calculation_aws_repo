@@ -21,7 +21,9 @@ import config  # Importing the complete configuration matrix module
 # FLASK & REAL-TIME MULTI-PAGE WEB CONFIGURATION
 # ==============================================================================
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Enforce async_mode='threading' to safely bridge background threads with WebSockets
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Route 1: Serve the core multi-page interface layout template
 @app.route('/')
@@ -40,7 +42,6 @@ def get_dashboard_pages():
 # Route 3: Dynamic static server path to safely route files from your new cache folder
 @app.route('/live-static/<filename>')
 def serve_live_cache_svg(filename):
-    # Use config.CACHE_DIR directly to ensure relative file lookups match seamlessly
     response = send_from_directory(config.CACHE_DIR, filename)
     
     # Strict cache headers to bypass local browser proxy caches completely
@@ -49,6 +50,12 @@ def serve_live_cache_svg(filename):
     response.headers["Expires"] = "0"
     return response
 
+# ==============================================================================
+# WEB DIAGNOSTIC TUNNEL LOGGER
+# ==============================================================================
+@socketio.on('connect')
+def handle_web_connection():
+    print("\n🟢 SUCCESS: A web browser has officially linked into the real-time socket tunnel! 🟢\n")
 
 # ==============================================================================
 # THREAD-SAFE DATA STORAGE HOOKS
@@ -60,7 +67,6 @@ class DataStorage:
         self.attributes = {}
 
 data_store = DataStorage()
-
 
 # ==============================================================================
 # BACKGROUND THINGSBOARD DATA ENGINE
@@ -248,28 +254,22 @@ class ThingsBoardWorker:
             current_signals = self.store.signals.copy()
             current_attributes = self.store.attributes.copy()
         
-        # FIX: Call the updated plural function handling multi-page cache directories!
         svg_processor.generate_live_svgs(current_signals, current_attributes)
         
-        # Broadcast the SocketIO render refresh notice to templates/index.html
+        # Broadcast real-time ping out across all application namespaces
         socketio.emit('refresh_svg')
-
 
 # ==============================================================================
 # ENGINE MAIN RUNNER BLOCK
 # ==============================================================================
 if __name__ == "__main__":
-    # Force initialize the application caching structures on startup
     os.makedirs(config.CACHE_DIR, exist_ok=True)
-    
-    # Initialize the hybrid stream pipeline network environment
     tb_worker = ThingsBoardWorker(data_store)
     
     if tb_worker.start_connection():
         print("\n=== Web Server Pipeline Initiated Successfully ===")
         print("Open your web browser and go to: http://127.0.0.1:5000\n")
         
-        # Launch Flask development runtime block mapping engine
         socketio.run(app, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
     else:
         print("Fatal Network Error: Cloud pipeline connection failed to authenticate.")

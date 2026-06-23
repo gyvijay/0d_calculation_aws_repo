@@ -4,13 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fuel Cell Real-Time SVG Dashboard</title>
-    <script src="https://cdn.socketio.org/4.7.5/socketio.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socketio/3.1.3/socketio.min.js"></script>
+    
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: #f8f9fa;
             margin: 0;
-            padding: 10px 20px; /* Reduced vertical padding from 20px to 10px */
+            padding: 10px 20px; 
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -22,25 +24,25 @@
             justify-content: space-between;
             align-items: center;
             width: 100%;
-            max-width: 1600px; /* Expanded maximum width constraint */
-            margin-bottom: 8px; /* Compressed space below header */
+            max-width: 1600px; 
+            margin-bottom: 8px; 
         }
         h1 {
-            font-size: 21px; /* Slightly tightened font title size */
+            font-size: 21px; 
             color: #212529;
             margin: 0;
         }
         .nav-controls {
             display: flex;
             align-items: center;
-            gap: 10px; /* Reduced gap between controls */
+            gap: 10px; 
         }
         .btn {
             background-color: #007bff;
             color: white;
             border: none;
-            padding: 6px 14px; /* Reduced button sizing footprint */
-            font-size: 13px; /* Slightly lower text footprint profile */
+            padding: 6px 14px; 
+            font-size: 13px; 
             font-weight: bold;
             border-radius: 4px;
             cursor: pointer;
@@ -54,13 +56,13 @@
             font-weight: 600;
             color: #495057;
             background: #e9ecef;
-            padding: 5px 12px; /* Smoothed counter badge tracking space */
+            padding: 5px 12px; 
             border-radius: 20px;
         }
         #dashboard-viewport {
             width: 100%;
-            max-width: 1600px; /* Allowed the main drawing engine frame to go wider */
-            flex: 1; /* Instructs container to take up all available vertical screen real estate */
+            max-width: 1600px; 
+            flex: 1; 
             background: white;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
@@ -74,8 +76,8 @@
         }
         svg {
             width: 100%;
-            height: 100%; /* Force standard vector graphic layouts to scale to container bounds */
-            max-height: 88vh; /* Lifted canvas viewport upper limits from 85vh */
+            height: 100%; 
+            max-height: 88vh; 
             object-fit: contain;
         }
         .status-msg {
@@ -117,7 +119,7 @@
         <div class="status-msg" id="fallback-status">Contacting Application Live Cache Pipeline...</div>
     </div>
 
-    <script>
+<script>
         let dashboardPages = [];
         let currentPageIndex = 0;
 
@@ -132,7 +134,7 @@
             document.getElementById('diagnostic-error-logger').style.display = 'none';
         }
 
-        // 1. Fetch page metadata configuration array map objects
+        // 1. Fetch page metadata
         fetch('/api/pages')
             .then(res => {
                 if (!res.ok) throw new Error(`Server returned HTTP code ${res.status}`);
@@ -152,7 +154,7 @@
                 document.getElementById('fallback-status').innerText = "Failed loading dashboard manifest mappings.";
             });
 
-        // 2. Render vector asset frame contents inline to canvas viewport
+        // 2. Render vector asset frame contents
         function renderCurrentPage() {
             if (dashboardPages.length === 0) return;
             const activePage = dashboardPages[currentPageIndex];
@@ -160,25 +162,31 @@
             document.getElementById('page-title').innerText = activePage.title;
             document.getElementById('page-counter').innerText = `${currentPageIndex + 1} / ${dashboardPages.length}`;
 
+            // We generate an aggressive cache breaker down to the exact millisecond
             const cacheBreaker = new Date().getTime();
             const targetUrl = `/live-static/${activePage.filename}?t=${cacheBreaker}`;
 
             fetch(targetUrl)
                 .then(response => {
-                    if (!response.ok) throw new Error(`HTTP ${response.status} - Cache folder file missing or inaccessible.`);
+                    if (!response.ok) throw new Error(`HTTP ${response.status} - File missing or inaccessible.`);
                     return response.text();
                 })
                 .then(svgXML => {
                     clearErrors();
+                    
+                    // --- DIAGNOSTIC LOG ---
+                    // Check if '777' exists anywhere inside the incoming data from the server
+                    if (svgXML.includes("777")) {
+                        console.log("🎯 SUCCESS: The fresh '777' value was found inside the downloaded SVG data!");
+                    } else {
+                        console.warn("⚠️ WARNING: The browser just fetched the file, but the text '777' is missing from the data sent by the server.");
+                    }
+                    // ----------------------
+
                     document.getElementById('dashboard-viewport').innerHTML = svgXML;
                 })
                 .catch(err => {
                     logError(err.message, "SVG_STREAM_RENDER_DELAY");
-                    document.getElementById('dashboard-viewport').innerHTML = `
-                        <div class="status-msg" style="color:#c0392b;">
-                            <b>Asset Load Delay:</b> ${err.message}<br>
-                            <span style="font-size:14px; color:#7f8c8d;">Checking folder for files... New updates from ThingsBoard will clear this screen.</span>
-                        </div>`;
                 });
         }
 
@@ -188,12 +196,10 @@
             renderCurrentPage();
         }
 
-        // 3. Connect real-time socket tracking channel 
-        const socket = io();
-
-        socket.on('refresh_svg', () => {
+        // 3. Auto-Pull Backup Loop (Set to 1 second)
+        setInterval(() => {
             renderCurrentPage();
-        });
+        }, 1000); 
 
         // Left & Right Keyboard Shortcut Controls Map
         document.addEventListener('keydown', (e) => {
