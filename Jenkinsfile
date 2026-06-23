@@ -13,7 +13,7 @@ pipeline{
         }
         stage('create Docker Container'){
             steps{
-                bat 'docker run --rm -p 9000:5000 --name=0d_calculation_aws_cont_jenk 0d_calculation_aws_img_jenk'
+                bat 'docker run -d --rm -p 9000:5000 --name=0d_calculation_aws_cont_jenk 0d_calculation_aws_img_jenk'
             }
         }
     }
