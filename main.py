@@ -3,18 +3,19 @@ import sys
 import json
 import inspect
 import threading
+import io
 import requests
 import websocket
 
 # Web Framework imports
-from flask import Flask, render_template, send_from_directory, jsonify
+from flask import Flask, render_template, jsonify, Response
 from flask_socketio import SocketIO
 
 import paho.mqtt.client as mqtt
 
 # Import your custom modules
 import calculations
-import svg_processor  
+import svg_processor
 import config  # Importing the complete configuration matrix module
 
 # ==============================================================================
@@ -25,6 +26,9 @@ app = Flask(__name__)
 # Enforce async_mode='threading' to safely bridge background threads with WebSockets
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+# Global dictionary holding our live, in-memory XML templates mapped by real filename keys
+BASE_SVG_TEMPLATES = {}
+
 # Route 1: Serve the core multi-page interface layout template
 @app.route('/')
 def index():
@@ -33,18 +37,28 @@ def index():
 # Route 2: Dynamic JSON lookup API allowing index.html to read pages from config.py
 @app.route('/api/pages')
 def get_dashboard_pages():
+    # Pass the actual file name to the frontend layout engine
     client_pages = [
-        {"title": p["title"], "filename": p["live_filename"]} 
+        {"title": p["title"], "filename": os.path.basename(p["template"])} 
         for p in config.DASHBOARD_PAGES
     ]
+    print(f"DEBUG API CALLED: Sent array to browser -> {client_pages}")
     return jsonify(client_pages)
 
-# Route 3: Dynamic static server path to safely route files from your new cache folder
+# Route 3: Dynamic static server path - STREAMS DIRECTLY FROM IN-MEMORY TRANSFORMATIONS
+# Route 3: Dynamic static server path - STREAMS DIRECTLY FROM IN-MEMORY TRANSFORMATIONS
+# Route 3: Dynamic static server path - STREAMS DIRECTLY FROM IN-MEMORY TRANSFORMATIONS
+# Route 3: Dynamic static server path - STREAMS DIRECTLY FROM IN-MEMORY TRANSFORMATIONS
 @app.route('/live-static/<filename>')
 def serve_live_cache_svg(filename):
-    response = send_from_directory(config.CACHE_DIR, filename)
+    global BASE_SVG_TEMPLATES
     
-    # Strict cache headers to bypass local browser proxy caches completely
+    svg_string = BASE_SVG_TEMPLATES.get(filename)
+    if not svg_string:
+        return f"Asset '{filename}' not found in RAM cache pipeline.", 404
+        
+    byte_io = io.BytesIO(svg_string.encode('utf-8'))
+    response = Response(byte_io, mimetype='image/svg+xml')
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -248,24 +262,41 @@ class ThingsBoardWorker:
         ws.run_forever()
 
     def process_ui_cycle(self):
-        self.run_calculations()
-        
-        with self.store.lock:
-            current_signals = self.store.signals.copy()
-            current_attributes = self.store.attributes.copy()
-        
-        svg_processor.generate_live_svgs(current_signals, current_attributes)
-        
-        # Broadcast real-time ping out across all application namespaces
-        socketio.emit('refresh_svg')
+            global BASE_SVG_TEMPLATES
+            
+            # 1. Run calculations engine
+            self.run_calculations()
+            
+            # 2. Extract thread-safe copies of data snapshots
+            with self.store.lock:
+                current_signals = self.store.signals.copy()
+                current_attributes = self.store.attributes.copy()
+            
+            # 3. Regenerate the cache images in RAM immediately
+            BASE_SVG_TEMPLATES = svg_processor.generate_live_svgs(current_signals, current_attributes)
+            
+            # 4. 🌟 THE DEFINITIVE FIX: Explicitly target the root namespace '/'
+            # This tells Flask-SocketIO to forward the event from the background thread to the frontend.
+            try:
+                socketio.emit('refresh_svg', namespace='/')
+                print("⚡ Live Telemetry Broadcasted via WebSockets to UI.")
+            except Exception as e:
+                print(f"⚠️ WebSocket Broadcast drop wrapper: {e}")
 
 # ==============================================================================
 # ENGINE MAIN RUNNER BLOCK
 # ==============================================================================
 if __name__ == "__main__":
-    os.makedirs(config.CACHE_DIR, exist_ok=True)
     tb_worker = ThingsBoardWorker(data_store)
     
+    # 🌟 FIXED: Warm up the global RAM layout dictionary immediately on bootup 
+    # This prevents /api/pages from returning empty structures if a user loads before MQTT updates
+    try:
+        BASE_SVG_TEMPLATES = svg_processor.generate_live_svgs({}, {})
+        print(f"📦 Startup RAM cache check: Loaded assets: {list(BASE_SVG_TEMPLATES.keys())}")
+    except Exception as e:
+        print(f"Warning: Initial startup template processing sequence bypassed: {e}")
+
     if tb_worker.start_connection():
         print("\n=== Web Server Pipeline Initiated Successfully ===")
         print("Open your web browser and go to: http://127.0.0.1:5000\n")

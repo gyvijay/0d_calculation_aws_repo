@@ -5,27 +5,30 @@ import config
 def generate_live_svgs(local_signals, local_attributes):
     """
     Loops through every page specified in config.DASHBOARD_PAGES,
-    replaces data placeholders, and saves them directly to the svg_cache folder.
+    reads the main source blueprint SVG file, replaces data placeholders, 
+    and returns a lookup dictionary of the updated SVG strings mapped by their real filenames.
     """
-    # Double check that cache directory folder path exists
-    os.makedirs(config.CACHE_DIR, exist_ok=True)
+    processed_pages = {}
 
     for page in config.DASHBOARD_PAGES:
+        # Using the direct path to your main source SVG file
         template_path = page["template"]
-        output_path = os.path.join(config.CACHE_DIR, page["live_filename"])
+        
+        # Extract just the raw file name (e.g., "main_layout.svg") to use as our memory key
+        filename_key = os.path.basename(template_path)
 
         if not os.path.exists(template_path):
             print(f"[Processor Error] Blueprint template asset missing: {template_path}")
             continue
 
         try:
-            # 1. Read clean raw master structural vector layer
+            # 1. Read clean raw master structural vector layer from the main SVG file
             with open(template_path, "r", encoding="utf-8") as f:
                 working_svg = f.read()
 
             # 2. Swap placeholder tags with active thread telemetry
             for key, placeholder in config.SVG_TEXT_MAP.items():
-                value = "---"  # Default pipeline configuration display status
+                value = "---"  # Default configuration status
                 
                 if key in local_signals:
                     val_raw = local_signals[key]
@@ -43,9 +46,10 @@ def generate_live_svgs(local_signals, local_attributes):
             working_svg = re.sub(r'<font[^>]*>', '', working_svg)
             working_svg = re.sub(r'</font>', '', working_svg)
 
-            # 4. Save clean compiled framework live file down into cache directory
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(working_svg)
+            # 4. Map the raw XML text directly to its main filename key in memory
+            processed_pages[filename_key] = working_svg
 
         except Exception as e:
-            print(f"Failed parsing dynamic layouts for target page {page['page_id']}: {e}")
+            print(f"Failed parsing dynamic layouts for target page {filename_key}: {e}")
+
+    return processed_pages

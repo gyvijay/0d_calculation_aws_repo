@@ -17,17 +17,13 @@ CACHE_DIR = os.path.join(BASE_DIR, "svg_cache")
 # ==============================================================================
 DASHBOARD_PAGES = [
     {
-        "page_id": "page1",
-        "title": "Main Fuel Cell Overview",
-        "template": os.path.join(TEMPLATE_DIR, "EH_5-10kW_FCPS.svg"),
-        "live_filename": "EH_5-10kW_FCPS_Live.svg"
+        "title": "Fuel Cell System Page 1",
+        "template": "svg_templates/EH_5-10kW_FCPS.svg"
     },
     {
-        "page_id": "page2",
-        "title": "Main Fuel Cell Internal Modules",
-        "template": os.path.join(TEMPLATE_DIR, "EH_5-10kW_FCPS_PG2.svg"),
-        "live_filename": "EH_5-10kW_FCPS_PG2_Live.svg"
-    },
+        "title": "Fuel Cell System Page 2",
+        "template": "svg_templates/EH_5-10kW_FCPS_PG2.svg"
+    }
 ]
 
 # ==============================================================================
