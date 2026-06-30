@@ -137,7 +137,8 @@
     <script>
         let dashboardPages = [];
         let currentPageIndex = 0;
-        let isFetching = false; // 🌟 SAFETY GATE: Prevents stacking concurrent requests over latent networks
+        let isFetching = false;
+        let svgCache = {}; // 🌟 MEMORY CACHE: Holds layout templates locally
 
         function logError(message, context) {
             console.error(`[${context} Error]:`, message);
@@ -150,7 +151,7 @@
             document.getElementById('diagnostic-error-logger').style.display = 'none';
         }
 
-        // 1. Fetch dashboard layout maps config manifest list FIRST
+        // 1. Fetch layout map configurations
         function fetchPagesManifest() {
             fetch('/api/pages')
                 .then(res => {
@@ -161,13 +162,16 @@
                     dashboardPages = data;
                     if (dashboardPages.length > 0) {
                         clearErrors();
-                        renderCurrentPage();
                         
-                        // 🌟 ADAPTIVE TIMING TUNNEL: Polls every 2-5s safely protected by safety gate
-                        setInterval(renderCurrentPage, 2000);
-                        
+                        // Start tracking connection status immediately
                         const connectionDot = document.getElementById('connection-indicator');
                         if (connectionDot) connectionDot.classList.add('connected');
+                        
+                        // 🌟 PRE-FETCH ALL ASSETS INTO BROWSER MEMORY AT STARTUP
+                        preloadAllAssets();
+                        
+                        // Fire background polling worker cycle
+                        setInterval(syncLiveTelemetry, 2000);
                     } else {
                         document.getElementById('fallback-status').innerText = "Flask configuration pages array is empty.";
                     }
@@ -178,55 +182,83 @@
                 });
         }
 
-        // 2. Fetch raw text data mapping directly from backend dynamic server path
-        function renderCurrentPage() {
-            if (dashboardPages.length === 0) return;
-            
-            // 🌟 CONCURRENCY CHECK: If last HTTP execution thread hasn't finished loading, skip cycle
-            if (isFetching) {
-                console.warn("[Network Warning] Slow tunnel latency detected. Postponing draw cycle to avoid pipe clogging.");
-                return;
-            }
+        // 🌟 Helper to fetch and cache all layouts concurrently
+        function preloadAllAssets() {
+            dashboardPages.forEach((page, index) => {
+                fetch(`/live-static/${page.filename}?init=${Date.now()}`)
+                    .then(res => res.text())
+                    .then(svgXML => {
+                        if (svgXML.includes('<svg')) {
+                            svgCache[page.filename] = svgXML;
+                            
+                            // If this happens to be the page we are looking at right now, draw it instantly
+                            if (index === currentPageIndex) {
+                                switchPageUI();
+                            }
+                        }
+                    })
+                    .catch(err => console.error(`Error warm-caching ${page.filename}:`, err));
+            });
+        }
 
+        // 🌟 INSTANT FRONTEND UI SWITCHER (0ms delay)
+        function switchPageUI() {
+            if (dashboardPages.length === 0) return;
             const activePage = dashboardPages[currentPageIndex];
             
             document.getElementById('page-title').innerHTML = `<span id="connection-indicator" class="status-dot connected"></span> ${activePage.title}`;
             document.getElementById('page-counter').innerText = `${currentPageIndex + 1} / ${dashboardPages.length}`;
 
-            // Generate precise epoch timestamp string to totally shatter internal browser caching layers
+            const fallbackStatus = document.getElementById('fallback-status');
+            if (fallbackStatus) fallbackStatus.style.display = 'none';
+
+            const viewport = document.getElementById('dashboard-viewport');
+            
+            // Check if we have this page warm cached inside local RAM variables
+            if (svgCache[activePage.filename]) {
+                viewport.innerHTML = svgCache[activePage.filename];
+            } else {
+                viewport.innerHTML = `<div class="status-msg">Loading Asset Struct from Warm Cache...</div>`;
+            }
+        }
+
+        // 🌟 BACKGROUND RE-POLLER (Keeps values updating silently in place)
+        function syncLiveTelemetry() {
+            if (dashboardPages.length === 0 || isFetching) return;
+
+            const activePage = dashboardPages[currentPageIndex];
             const cacheBreaker = Date.now();
             const targetUrl = `/live-static/${activePage.filename}?nocache=${cacheBreaker}`;
 
-            // Lock safety turnstile
             isFetching = true;
 
             fetch(targetUrl, {
                 method: 'GET',
                 headers: {
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0'
+                    'Pragma': 'no-cache'
                 }
             })
                 .then(response => {
-                    if (!response.ok) throw new Error(`HTTP ${response.status} - Memory asset missing.`);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     return response.text();
                 })
                 .then(svgXML => {
-                    clearErrors();
-                    
-                    // Verify we actually fetched valid markup string payload data before rewriting
                     if (svgXML.includes('<svg')) {
+                        clearErrors();
+                        
+                        // Silently save the freshest telemetry copy to cache for navigation
+                        svgCache[activePage.filename] = svgXML;
+
+                        // Parse out current live numbers inside view without resetting DOM structure focus
                         const viewport = document.getElementById('dashboard-viewport');
-                        viewport.innerHTML = ''; 
                         viewport.innerHTML = svgXML;
                     }
                 })
                 .catch(err => {
-                    logError(err.message, "SVG_RENDER_ERROR");
+                    logError(err.message, "LIVE_TELEMETRY_SYNC_ERROR");
                 })
                 .finally(() => {
-                    // 🌟 RELEASE GATE: Re-allow next polling request once this transmission sequence completes 
                     isFetching = false;
                 });
         }
@@ -234,7 +266,12 @@
         function changePage(direction) {
             if (dashboardPages.length === 0) return;
             currentPageIndex = (currentPageIndex + direction + dashboardPages.length) % dashboardPages.length;
-            renderCurrentPage();
+            
+            // 🌟 STEP 1: Change layout instantaneously from browser RAM data variables
+            switchPageUI();
+            
+            // STEP 2: Force trigger a silent telemetry query sweep right away to grab the values
+            syncLiveTelemetry();
         }
 
         // Keyboard hotkeys mapping for Left & Right Arrows
