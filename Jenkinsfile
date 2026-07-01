@@ -8,6 +8,15 @@ pipeline {
             }
         }
 
+        stage('Stop Old Container') {
+            steps {
+                sh '''
+                docker stop 0d_calculation_aws_cont_jenk || true
+                docker rm 0d_calculation_aws_cont_jenk || true
+                '''
+            }
+        }
+
         stage('List Docker Images') {
             steps {
                 sh 'docker images'
