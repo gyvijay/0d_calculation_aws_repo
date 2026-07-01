@@ -16,7 +16,7 @@ pipeline {
 
         stage('Create Docker Container') {
             steps {
-                sh 'docker run -d --rm -p 9000:5000 --name 0d_calculation_aws_cont_jenk 0d_calculation_aws_img_jenk'
+                sh 'docker run -d --rm -p 8081:5000 --name 0d_calculation_aws_cont_jenk 0d_calculation_aws_img_jenk'
             }
         }
     }
