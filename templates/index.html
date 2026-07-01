@@ -171,7 +171,7 @@
                         preloadAllAssets();
                         
                         // Fire background polling worker cycle
-                        setInterval(syncLiveTelemetry, 1000);
+                        setInterval(syncLiveTelemetry, 3000);
                     } else {
                         document.getElementById('fallback-status').innerText = "Flask configuration pages array is empty.";
                     }
